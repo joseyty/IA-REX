@@ -1,6 +1,11 @@
 import edge_tts
 import asyncio
 import os
+import time
+
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
+
+import pygame
 
 VOZ = "pt-BR-AntonioNeural"
 
@@ -11,4 +16,9 @@ async def gerar_audio(texto):
 
 def falar(texto):
     asyncio.run(gerar_audio(texto))
-    os.startfile("resposta.mp3")
+    pygame.mixer.music.load("resposta.mp3")
+    pygame.mixer.music.play()
+
+    while pygame.mixer.music.get_busy():
+        time.sleep(0.1)
+    pygame.mixer.music.unload() 
