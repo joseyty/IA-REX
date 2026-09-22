@@ -116,6 +116,19 @@ def abrir_fortnite():
         return "cuidado com o geno,boa sorte looper."
     except Exception as e:
         return "erro ao abrir a epic games: {e}"
+
+def bloco_de_notas():
+    texto_para_digitar = input("o que gostaria de escrever?")
+    pyautogui.press("win")
+    time.sleep(0.5)
+    pyautogui.write("bloco de notas")
+    time.sleep(0.2)
+    pyautogui.press("enter")
+    time.sleep(0.5)
+    pyautogui.write(texto_para_digitar)
+
+    return "texto escrito."
+
     
 
 
@@ -130,7 +143,7 @@ def executar(comando):
         return abrir_vscode()
     elif "fortnite" in comando:
         return abrir_fortnite()
+    elif "notas" in comando:
+        return bloco_de_notas()
     else:
         return "Comando não reconhecido. Por favor, tente novamente."
-
-
