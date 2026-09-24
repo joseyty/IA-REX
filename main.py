@@ -1,7 +1,16 @@
+import sys
+
+from PySide6.QtWidgets
+import QApplication
+
 from dispositivos import dispositivos
 from usuarios import usuarios
 from voz import falar
 import comandos
+from personagem import criar_personagem_personagem
+
+app = QApplication(sys.argv)
+personagem = criar_personagem(app)
 
 id_dispositivo = input("Digite o ID do dispositivo: ")
 

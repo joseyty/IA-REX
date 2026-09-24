@@ -12,5 +12,9 @@ dispositivos = {
    "celular_003":{
        "usuario": "reginaldo",
        "voz": "voz_reginaldo"
+   },
+   "celular_004":{
+        "usuario": "halana",
+        "voz": "voz_halana"   
    }
 }
