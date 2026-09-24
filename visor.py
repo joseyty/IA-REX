@@ -179,11 +179,12 @@ def imagem_para_bytes(imagem):
 # ============================================================
 # ANALISAR TELA COM GEMINI
 # ============================================================
-
 def analisar_tela(imagem):
-
     """
     Envia a imagem diretamente para a Gemini.
+
+    Faz até 3 tentativas caso a API esteja temporariamente
+    indisponível.
     """
 
     imagem_bytes = imagem_para_bytes(imagem)
@@ -207,16 +208,13 @@ Observe principalmente:
 - problemas visuais;
 - informações que possam ajudar o usuário.
 
-Não descreva cada detalhe.
-
-Ignore mudanças pequenas como:
+Ignore:
 
 - movimento do mouse;
 - pequenas animações;
 - cursor;
 - relógio;
-- pequenas mudanças visuais;
-- elementos que continuam iguais.
+- pequenas mudanças visuais.
 
 Só diga para Kyara falar quando existir uma mudança
 realmente relevante ou algo que mereça a atenção do usuário.
@@ -242,39 +240,73 @@ Se houver algo importante, use FALAR: SIM.
 Seja natural, curta e objetiva.
 """
 
-    try:
+    MAX_TENTATIVAS = 3
 
-        resposta = client.models.generate_content(
-            model=MODELO_GEMINI,
+    for tentativa in range(1, MAX_TENTATIVAS + 1):
 
-            contents=[
-                types.Part.from_bytes(
-                    data=imagem_bytes,
-                    mime_type="image/jpeg"
-                ),
+        try:
 
-                prompt
-            ],
-
-            config=types.GenerateContentConfig(
-                max_output_tokens=100,
-                temperature=0.2
+            print(
+                f"[GEMINI] Tentativa "
+                f"{tentativa}/{MAX_TENTATIVAS}..."
             )
-        )
 
-        texto = resposta.text.strip()
+            resposta = client.models.generate_content(
+                model=MODELO_GEMINI,
 
-        del imagem_bytes
+                contents=[
+                    types.Part.from_bytes(
+                        data=imagem_bytes,
+                        mime_type="image/jpeg"
+                    ),
 
-        return texto
+                    prompt
+                ],
 
-    except Exception as erro:
+                config=types.GenerateContentConfig(
+                    max_output_tokens=100,
+                    temperature=0.2
+                )
+            )
 
-        print(
-            f"[GEMINI] Erro ao analisar tela: {erro}"
-        )
+            texto = resposta.text.strip()
 
-        return None
+            del imagem_bytes
+
+            print("[GEMINI] Análise concluída.")
+
+            return texto
+
+        except Exception as erro:
+
+            print(
+                f"[GEMINI] Erro na tentativa "
+                f"{tentativa}: {erro}"
+            )
+
+            # Se ainda houver tentativas,
+            # espera antes de tentar novamente.
+            if tentativa < MAX_TENTATIVAS:
+
+                espera = tentativa * 3
+
+                print(
+                    f"[GEMINI] Aguardando "
+                    f"{espera} segundos..."
+                )
+
+                time.sleep(espera)
+
+            else:
+
+                print(
+                    "[GEMINI] Todas as tentativas "
+                    "falharam."
+                )
+
+    del imagem_bytes
+
+    return None
 
 
 # ============================================================

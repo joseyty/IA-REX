@@ -1,6 +1,12 @@
-import pyautogui
-import time
+from ia import perguntar
 
+while True:
 
-time.sleep(5)
-print(pyautogui.position())
+    mensagem = input("Você: ")
+
+    if mensagem.lower() in ["sair", "exit", "quit"]:
+        break
+
+    resposta = perguntar(mensagem)
+
+    print("Kyara:", resposta)

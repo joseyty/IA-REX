@@ -3,117 +3,156 @@ import threading
 
 from PySide6.QtWidgets import QApplication
 
+from personagem import criar_personagem
 from dispositivos import dispositivos
 from usuarios import usuarios
 from voz import falar
+from voz_reconhecimento import ouvir
+from ia import perguntar
+
 import comandos
 
-from personagem import criar_personagem
-from visor import iniciar_visor_thread
+
+def falar_kyara(personagem, mensagem):
+    print("Kyara:", mensagem)
+
+    try:
+        personagem.falando()
+        falar(mensagem)
+
+    except Exception as erro:
+        print("[VOZ] Erro:", erro)
+
+    finally:
+        personagem.parou_de_falar()
 
 
-# ============================================================
-# APLICAÇÃO QT
-# ============================================================
+def processar_mensagem(mensagem, personagem):
+
+    mensagem = mensagem.strip()
+
+    if not mensagem:
+        return
+
+    print("\nVocê:", mensagem)
+
+    # Primeiro tenta executar um comando do computador
+    try:
+
+        resposta = comandos.executar(mensagem)
+
+        if resposta:
+            falar_kyara(personagem, resposta)
+            return
+
+    except Exception as erro:
+
+        print("[COMANDOS] Erro:", erro)
+
+    # Se não for um comando, manda para a IA
+    try:
+
+        resposta = perguntar(mensagem)
+
+        if resposta:
+            falar_kyara(personagem, resposta)
+
+    except Exception as erro:
+
+        print("[OLLAMA] Erro:", erro)
+
+        falar_kyara(
+            personagem,
+            "Tive um problema para pensar nessa resposta."
+        )
+
+
+def loop_assistente(personagem):
+
+    print()
+    print("==============================")
+    print("       KYARA INICIADA")
+    print("==============================")
+    print()
+
+    # Identificação do dispositivo
+    id_dispositivo = input("Digite o ID do dispositivo: ")
+
+    if id_dispositivo not in dispositivos:
+
+        print("Dispositivo não cadastrado.")
+        return
+
+    dispositivo = dispositivos[id_dispositivo]
+
+    nome_usuario = dispositivo["usuario"]
+    voz_usuario = dispositivo["voz"]
+
+    usuario = usuarios[nome_usuario]
+
+    print()
+    print("--- Dispositivo identificado ---")
+    print("Usuário:", usuario["nome"])
+    print("Voz:", voz_usuario)
+    print()
+
+    falar_kyara(
+        personagem,
+        f"Olá {usuario['nome']}. Eu sou a Kyara."
+    )
+
+    while True:
+
+        try:
+
+            # Agora a entrada vem do microfone
+            mensagem = ouvir()
+
+            if not mensagem:
+                continue
+
+            mensagem_minuscula = mensagem.lower()
+
+            if mensagem_minuscula in [
+                "sair",
+                "encerrar",
+                "fechar kyara"
+            ]:
+
+                falar_kyara(
+                    personagem,
+                    "Até mais!"
+                )
+
+                break
+
+            processar_mensagem(
+                mensagem,
+                personagem
+            )
+
+        except KeyboardInterrupt:
+
+            print("\n[KYARA] Encerrando...")
+            break
+
+        except Exception as erro:
+
+            print("[ASSISTENTE] Erro:", erro)
+
 
 app = QApplication(sys.argv)
-
-
-# ============================================================
-# CRIAR PERSONAGEM
-# ============================================================
 
 personagem = criar_personagem()
 
 
-# ============================================================
-# INICIAR VISOR
-# ============================================================
-
-iniciar_visor_thread(personagem)
-
-
-# ============================================================
-# LOOP PRINCIPAL DO ASSISTENTE
-# ============================================================
-
-def loop_assistente():
-
-    id_dispositivo = input(
-        "Digite o ID do dispositivo: "
-    )
-
-    if id_dispositivo in dispositivos:
-
-        dispositivo = dispositivos[id_dispositivo]
-
-        nome_usuario = dispositivo["usuario"]
-        voz_usuario = dispositivo["voz"]
-
-        usuario = usuarios[nome_usuario]
-
-        print("\n--- Dispositivo identificado ---")
-        print(
-            "Usuario:",
-            usuario["nome"]
-        )
-
-        print(
-            "Voz:",
-            voz_usuario
-        )
-
-        while True:
-
-            meu_comando = input(
-                "Digite o que quer fazer: "
-            )
-
-            if not meu_comando.strip():
-                continue
-
-            try:
-
-                resposta = comandos.executar(
-                    meu_comando
-                )
-
-                personagem.falando()
-
-                falar(resposta)
-
-                personagem.parou_de_falar()
-
-            except Exception as erro:
-
-                print(
-                    "[ASSISTENTE] Erro:",
-                    erro
-                )
-
-                personagem.parou_de_falar()
-
-    else:
-
-        print(
-            "Dispositivo não cadastrado, cadastre."
-        )
-
-
-# ============================================================
-# THREAD DO ASSISTENTE
-# ============================================================
-
 thread = threading.Thread(
     target=loop_assistente,
+    args=(personagem,),
     daemon=True
 )
 
 thread.start()
 
-
-# ============================================================
-# INICIAR QT
-# ============================================================
 
 sys.exit(app.exec())
