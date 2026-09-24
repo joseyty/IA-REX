@@ -1,11 +1,16 @@
 import os
 import io
 import time
+import threading
 
 import mss
-from PIL import Image, ImageChops, ImageStat
+
+from PIL import Image, ImageChops
+
 from google import genai
 from google.genai import types
+
+from voz import falar
 
 
 # ============================================================
@@ -16,27 +21,21 @@ from google.genai import types
 INTERVALO_CAPTURA = 5
 
 # Tempo mínimo entre duas análises da Gemini
-INTERVALO_GEMINI = 30
+INTERVALO_GEMINI = 5
 
-# Quanto de mudança na tela é necessário para considerar
-# que aconteceu algo relevante.
-#
-# 0.05 = aproximadamente 5% dos pixels mudaram
+# Porcentagem mínima de mudança visual
 LIMIAR_MUDANCA = 0.05
 
-# Diferença mínima de brilho entre pixels para considerar
-# que aquele pixel realmente mudou.
+# Diferença mínima entre pixels
 LIMIAR_PIXEL = 35
 
 # Modelo Gemini
 MODELO_GEMINI = "gemini-3.8-flash"
 
-# Limite de segurança desta execução.
-# Sua cota mostrada no AI Studio é 100 RPD.
-# Deixamos 20 chamadas de margem.
+# Limite de segurança desta execução
 MAX_ANALISES = 80
 
-# Qualidade JPEG enviada para a Gemini
+# Qualidade da imagem enviada
 QUALIDADE_JPEG = 65
 
 
@@ -54,8 +53,14 @@ if not API_KEY:
         "e abra um novo terminal do VS Code.\n"
     )
 
-
 client = genai.Client(api_key=API_KEY)
+
+
+# ============================================================
+# CONTROLE DA VOZ
+# ============================================================
+
+falando = False
 
 
 # ============================================================
@@ -63,11 +68,12 @@ client = genai.Client(api_key=API_KEY)
 # ============================================================
 
 def capturar_tela(sct, monitor):
+
     """
     Captura a tela usando MSS.
 
     A imagem fica somente na memória.
-    Nenhum PNG/JPG é criado.
+    Nenhum arquivo é criado.
     """
 
     screenshot = sct.grab(monitor)
@@ -86,10 +92,9 @@ def capturar_tela(sct, monitor):
 # ============================================================
 
 def preparar_comparacao(imagem):
+
     """
     Reduz a imagem para que a comparação seja leve.
-
-    Não altera a imagem original.
     """
 
     imagem = imagem.resize(
@@ -107,29 +112,21 @@ def preparar_comparacao(imagem):
 # ============================================================
 
 def tela_mudou_relevantemente(anterior, atual):
+
     """
     Verifica se uma quantidade relevante da tela mudou.
-
-    Retorna:
-
-        True  -> mudança relevante
-        False -> mudança pequena
     """
 
     if anterior is None:
         return True
 
-    anterior = preparar_comparacao(anterior)
-    atual = preparar_comparacao(atual)
+    anterior_reduzida = preparar_comparacao(anterior)
+    atual_reduzida = preparar_comparacao(atual)
 
     diferenca = ImageChops.difference(
-        anterior,
-        atual
+        anterior_reduzida,
+        atual_reduzida
     )
-
-    # --------------------------------------------------------
-    # Calcula quantos pixels realmente mudaram.
-    # --------------------------------------------------------
 
     pixels = list(diferenca.getdata())
 
@@ -156,6 +153,7 @@ def tela_mudou_relevantemente(anterior, atual):
 # ============================================================
 
 def imagem_para_bytes(imagem):
+
     """
     Converte a imagem diretamente da RAM para JPEG.
 
@@ -183,6 +181,7 @@ def imagem_para_bytes(imagem):
 # ============================================================
 
 def analisar_tela(imagem):
+
     """
     Envia a imagem diretamente para a Gemini.
     """
@@ -190,36 +189,57 @@ def analisar_tela(imagem):
     imagem_bytes = imagem_para_bytes(imagem)
 
     prompt = """
-Você é o sistema de visão de um assistente virtual de computador.
+Você é a visão de uma assistente virtual de computador chamada Kyara.
 
 Analise esta captura de tela.
 
-Sua função é ajudar o usuário a entender o que está
-acontecendo no computador.
+Seu objetivo é perceber acontecimentos importantes na tela.
 
 Observe principalmente:
 
 - qual programa está aberto;
+- qual jogo está sendo executado;
 - qual site está aberto;
 - erros;
 - mensagens importantes;
-- janelas que apareceram;
-- botões importantes;
-- mudanças que possam exigir atenção;
+- janelas novas;
+- mudanças importantes;
 - problemas visuais;
 - informações que possam ajudar o usuário.
 
-Não descreva cada detalhe da tela.
+Não descreva cada detalhe.
 
-Se não houver nada importante, responda:
+Ignore mudanças pequenas como:
 
-"A tela parece normal."
+- movimento do mouse;
+- pequenas animações;
+- cursor;
+- relógio;
+- pequenas mudanças visuais;
+- elementos que continuam iguais.
 
-Se houver algo importante, seja curto e objetivo.
+Só diga para Kyara falar quando existir uma mudança
+realmente relevante ou algo que mereça a atenção do usuário.
 
-Responda sempre em português brasileiro.
+Não invente informações.
 
-Não invente informações que não estejam visíveis.
+Responda EXATAMENTE neste formato:
+
+FALAR: SIM
+
+MENSAGEM: uma frase curta em português brasileiro.
+
+OU:
+
+FALAR: NAO
+
+MENSAGEM: NADA
+
+Se não houver algo importante, use FALAR: NAO.
+
+Se houver algo importante, use FALAR: SIM.
+
+Seja natural, curta e objetiva.
 """
 
     try:
@@ -232,21 +252,21 @@ Não invente informações que não estejam visíveis.
                     data=imagem_bytes,
                     mime_type="image/jpeg"
                 ),
+
                 prompt
             ],
 
             config=types.GenerateContentConfig(
-                max_output_tokens=150,
+                max_output_tokens=100,
                 temperature=0.2
             )
         )
 
-        texto = resposta.text
+        texto = resposta.text.strip()
 
-        # Libera os bytes da imagem
         del imagem_bytes
 
-        return texto.strip()
+        return texto
 
     except Exception as erro:
 
@@ -258,22 +278,117 @@ Não invente informações que não estejam visíveis.
 
 
 # ============================================================
+# VERIFICAR SE GEMINI DEVE FALAR
+# ============================================================
+
+def processar_resposta(resposta, personagem):
+
+    global falando
+
+    if not resposta:
+        return
+
+    print()
+    print("┌──────── GEMINI ────────")
+    print(resposta)
+    print("└────────────────────────")
+    print()
+
+    linhas = resposta.splitlines()
+
+    deve_falar = False
+    mensagem = ""
+
+    for linha in linhas:
+
+        linha_limpa = linha.strip()
+
+        if linha_limpa.upper().startswith("FALAR:"):
+
+            valor = linha_limpa.split(
+                ":",
+                1
+            )[1].strip().upper()
+
+            if valor == "SIM":
+                deve_falar = True
+
+        elif linha_limpa.upper().startswith("MENSAGEM:"):
+
+            mensagem = linha_limpa.split(
+                ":",
+                1
+            )[1].strip()
+
+    if not deve_falar:
+        print("[VISOR] Kyara decidiu não falar.")
+        return
+
+    if not mensagem:
+        return
+
+    if mensagem.upper() == "NADA":
+        return
+
+    if falando:
+        print("[VISOR] Kyara já está falando.")
+        return
+
+    falando = True
+
+    try:
+
+        print(
+            f"[KYARA] {mensagem}"
+        )
+
+        # Deixa a personagem diferente
+        # enquanto estiver falando.
+        if personagem is not None:
+            personagem.falando()
+
+        falar(mensagem)
+
+    except Exception as erro:
+
+        print(
+            f"[VOZ] Erro ao falar: {erro}"
+        )
+
+    finally:
+
+        if personagem is not None:
+            personagem.parou_de_falar()
+
+        falando = False
+
+
+# ============================================================
 # VISOR
 # ============================================================
 
-def iniciar_visor():
+def iniciar_visor(personagem=None):
 
     print()
     print("=" * 55)
     print("              VISOR DO ASSISTENTE")
     print("=" * 55)
     print()
+
     print("MSS: OK")
     print("Gemini: OK")
     print()
-    print("A tela será verificada a cada 5 segundos.")
-    print("A Gemini só será chamada quando houver")
-    print("uma mudança visual relevante.")
+
+    print(
+        "A tela será verificada a cada "
+        f"{INTERVALO_CAPTURA} segundos."
+    )
+
+    print(
+        "A Gemini só será chamada quando houver "
+        "uma mudança visual relevante."
+    )
+
     print()
     print("Nenhum screenshot será salvo no computador.")
     print()
@@ -282,23 +397,15 @@ def iniciar_visor():
     print("=" * 55)
     print()
 
-    # --------------------------------------------------------
-    # Controle
-    # --------------------------------------------------------
-
     imagem_anterior = None
 
     ultima_analise = 0
 
     quantidade_analises = 0
 
-    # --------------------------------------------------------
-    # MSS
-    # --------------------------------------------------------
-
     with mss.mss() as sct:
 
-        # Monitor 1 = tela principal
+        # Monitor principal
         monitor = sct.monitors[1]
 
         while True:
@@ -334,7 +441,7 @@ def iniciar_visor():
                 )
 
                 # =================================================
-                # 3. VERIFICAR SE PODE CONSULTAR GEMINI
+                # 3. VERIFICAR INTERVALO
                 # =================================================
 
                 intervalo_liberado = (
@@ -394,35 +501,15 @@ def iniciar_visor():
 
                         ultima_analise = time.time()
 
-                        # -----------------------------------------
-                        # RESPOSTA
-                        # -----------------------------------------
-
-                        if resposta:
-
-                            print()
-                            print(
-                                "┌──────── ASSISTENTE ────────"
-                            )
-
-                            print(resposta)
-
-                            print(
-                                "└────────────────────────────"
-                            )
-
-                            print()
-
-                        else:
-
-                            print(
-                                "[VISOR] Gemini não retornou "
-                                "uma resposta."
-                            )
+                        processar_resposta(
+                            resposta,
+                            personagem
+                        )
 
                         print(
                             f"[VISOR] Análises nesta sessão: "
-                            f"{quantidade_analises}/{MAX_ANALISES}"
+                            f"{quantidade_analises}/"
+                            f"{MAX_ANALISES}"
                         )
 
                 else:
@@ -446,10 +533,6 @@ def iniciar_visor():
                     INTERVALO_CAPTURA
                 )
 
-            # =====================================================
-            # CTRL+C
-            # =====================================================
-
             except KeyboardInterrupt:
 
                 print()
@@ -464,10 +547,6 @@ def iniciar_visor():
 
                 break
 
-            # =====================================================
-            # ERRO
-            # =====================================================
-
             except Exception as erro:
 
                 print()
@@ -476,15 +555,34 @@ def iniciar_visor():
                 )
 
                 print(
-                    "[VISOR] Tentando novamente em 5 segundos..."
+                    "[VISOR] Tentando novamente "
+                    "em 5 segundos..."
                 )
 
                 time.sleep(5)
 
 
 # ============================================================
-# INICIAR
+# THREAD DO VISOR
+# ============================================================
+
+def iniciar_visor_thread(personagem=None):
+
+    thread = threading.Thread(
+        target=iniciar_visor,
+        args=(personagem,),
+        daemon=True
+    )
+
+    thread.start()
+
+    return thread
+
+
+# ============================================================
+# EXECUÇÃO DIRETA
 # ============================================================
 
 if __name__ == "__main__":
+
     iniciar_visor()
