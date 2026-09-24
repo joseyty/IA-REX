@@ -108,9 +108,7 @@ def abrir_fortnite():
         pyautogui.press("enter")
         time.sleep(5)
 
-        for _ in range(40):
-            pyautogui.press('tab')
-            time.sleep(0.1)
+        pyautogui.click(x=259, y=588)
 
         pyautogui.press("enter")
         return "cuidado com o geno,boa sorte looper."

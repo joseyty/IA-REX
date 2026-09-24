@@ -1,9 +1,8 @@
 import os
 
-from PySide6.QtWidgets import QLabel
-from PySide6.QtGui import QPixmap
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtWidgets import QLabel, QGraphicsOpacityEffect
 from PySide6.QtGui import QPixmap, QTransform
+from PySide6.QtCore import Qt, QPoint
 
 
 class Personagem(QLabel):
@@ -52,7 +51,19 @@ class Personagem(QLabel):
 
         self.move(x, y)
 
+        self.efeito_fala = QGraphicsOpacityEffect()
+        self.setGraphicsEffect(self.efeito_fala)
+
+        self.efeito_fala.setOpacity(1.0)
+
         self.posicao_mouse = QPoint()
+
+    def falando(self):
+        self.efeito_fala.setOpacity(0.65)
+
+
+    def parou_de_falar(self):
+        self.efeito_fala.setOpacity(1.0)
 
     def mousePressEvent(self, evento):
 

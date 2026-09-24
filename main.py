@@ -10,7 +10,6 @@ import comandos
 from personagem import criar_personagem
 
 
-
 app = QApplication(sys.argv)
 
 personagem = criar_personagem()
@@ -35,14 +34,15 @@ def loop_assistente():
 
         while True:
 
-            # 1. Pede o comando
             meu_comando = input("Digite o que quer fazer: ")
 
-            # 2. Manda para o comandos.py trabalhar
             resposta = comandos.executar(meu_comando)
 
-            # 3. Faz o REX falar o que o comandos.py devolveu
+            personagem.falando()
+
             falar(resposta)
+
+            personagem.parou_de_falar()
 
     else:
 
@@ -55,6 +55,5 @@ thread = threading.Thread(
 )
 
 thread.start()
-
 
 sys.exit(app.exec())
